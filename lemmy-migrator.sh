@@ -33,7 +33,7 @@ RESUME_FILE="${EXPORT_DIR}/.imported_communities"
 
 usage() {
     cat <<'EOF'
-Lemmy Migrator — export and import subscribed communities
+Lemmy Migrator â export and import subscribed communities
 
 Usage:
   ./lemmy-migrator.sh export --source URL [--user NAME --password PASS | --token TOKEN]
@@ -50,6 +50,15 @@ Options:
   --dry-run          Resolve communities without subscribing
   --yes              Skip the confirmation prompt
   --debug            Verbose curl output (authorization headers are hidden)
+  --source-user NAME
+                     Username or email on the source instance (full)
+  --source-password PASS
+                     Account password for the source instance (full)
+  --source-token TOK Token for the source instance (full)
+  --target-user NAME Username or email on the target instance (full)
+  --target-password PASS
+                     Account password for the target instance (full)
+  --target-token TOK Token for the target instance (full)
   --export-dir PATH  Export directory (default: ./lemmy_export)
   -h, --help         Show this help
 
@@ -58,7 +67,7 @@ TARGET_TOKEN and TARGET_PASSWORD environment variables.
 EOF
 }
 
-die() { echo "  ✗ $*" >&2; exit 1; }
+die() { echo "  â $*" >&2; exit 1; }
 rdelay() { sleep "$REQUEST_DELAY"; }
 
 check_deps() {
@@ -95,7 +104,7 @@ api_request() {
             -H 'Accept: application/json')
         [[ -n "$API_TOKEN" ]] && args+=(-H "Authorization: Bearer ${API_TOKEN}")
         [[ -n "$data" ]] && args+=(-H 'Content-Type: application/json' -d "$data")
-        [[ "$DEBUG" -eq 1 ]] && echo "  → ${method} ${url}" >&2
+        [[ "$DEBUG" -eq 1 ]] && echo "  â ${method} ${url}" >&2
         rdelay
         rc=0
         http_code=$(curl "${args[@]}" "$url") || rc=$?
@@ -103,7 +112,7 @@ api_request() {
         API_HTTP_CODE="${http_code:-000}"
         retry_after=$(tr -d '\r' <"$headers" | sed -n 's/^[Rr]etry-[Aa]fter:[[:space:]]*//p' | tail -n 1)
         rm -f "$tmp" "$headers"
-        [[ "$DEBUG" -eq 1 ]] && echo "  ← HTTP ${API_HTTP_CODE}" >&2
+        [[ "$DEBUG" -eq 1 ]] && echo "  â HTTP ${API_HTTP_CODE}" >&2
 
         if [[ "$rc" -eq 0 && "$API_HTTP_CODE" != 429 && ! "$API_HTTP_CODE" =~ ^5[0-9][0-9]$ ]]; then
             return
@@ -166,7 +175,7 @@ login() {
     require_success "Login"
     API_TOKEN=$(jq -r '.jwt // empty' <<<"$API_RESPONSE")
     [[ -n "$API_TOKEN" ]] || die "Login response did not contain a token. Is 2FA enabled?"
-    echo "  ✓ Login successful."
+    echo "  â Login successful."
 }
 
 community_host() {
@@ -232,7 +241,7 @@ do_export() {
     echo ""
     echo "Fetching subscribed communities ..."
 
-    local all='[]' page=1 cursor='' seen_cursors='' items next count backup_count
+    local all='[]' page=1 cursor='' seen_cursors='' items next count backup_count fresh
     if [[ "$API_VERSION" -eq 3 ]]; then
         # Lemmy 0.19 provides the canonical follow URLs directly in its settings
         # backup. This also works on private instances and has no pagination cap.
@@ -264,7 +273,14 @@ do_export() {
                     die "Fetching communities returned an incomplete pagination response."
                 items=$(jq '.communities' <<<"$API_RESPONSE")
                 count=$(jq 'length' <<<"$items")
-                all=$(jq -cn --argjson a "$all" --argjson b "$items" '$a + $b')
+                fresh=$(jq -cn --argjson a "$all" --argjson b "$items" '
+                    ($a | map(.community.actor_id // .community.ap_id)) as $old
+                    | [$b[] | select(((.community.actor_id // .community.ap_id) as $id
+                        | ($old | index($id)) | not))]')
+                if [[ "$(jq 'length' <<<"$fresh")" -eq 0 ]]; then
+                    die "Fetching communities returned a repeated page."
+                fi
+                all=$(jq -cn --argjson a "$all" --argjson b "$fresh" '$a + $b')
                 [[ "$count" -lt 50 ]] && break
                 ((page++))
             done
@@ -312,7 +328,7 @@ do_export() {
         die "Could not write export atomically: ${output_file}"
     fi
     count=$(jq '.communities | length' <<<"$output")
-    echo "  ✓ ${count} subscriptions saved to ${output_file}"
+    echo "  â ${count} subscriptions saved to ${output_file}"
 }
 
 # ---------------------------------------------------------------------------
@@ -364,29 +380,29 @@ do_import() {
     while IFS= read -r item; do
         ((index++))
         ap_id=$(jq -r '.ap_id' <<<"$item")
-        handle=$(community_handle "$item") || { echo "[${index}/${total}] ✗ Invalid entry"; ((failed++)); continue; }
+        handle=$(community_handle "$item") || { echo "[${index}/${total}] â Invalid entry"; ((failed++)); continue; }
         if [[ -f "$RESUME_FILE" ]] && grep -qxF "$(resume_key "$target" "$ap_id")" "$RESUME_FILE"; then
-            echo "[${index}/${total}] ↩ Skipped (already imported): ${handle}"
+            echo "[${index}/${total}] â© Skipped (already imported): ${handle}"
             ((skipped++)); continue
         fi
         printf '[%s/%s] Resolving %s ... ' "$index" "$total" "$handle"
         if ! resolve_community "$ap_id" "$handle"; then
-            echo "✗ not found"
+            echo "â not found"
             ((failed++)); continue
         fi
         if [[ "$DRY_RUN" -eq 1 ]]; then
-            echo "✓ community ID ${RESOLVED_ID} (dry run)"
+            echo "â community ID ${RESOLVED_ID} (dry run)"
             ((imported++)); continue
         fi
         payload=$(jq -nc --argjson id "$RESOLVED_ID" '{community_id:$id,follow:true}')
         api_request POST "${API_BASE}/community/follow" "$payload"
         if [[ "$API_HTTP_CODE" -ge 200 && "$API_HTTP_CODE" -le 299 ]]; then
-            echo "✓ subscribed"
+            echo "â subscribed"
             resume_key "$target" "$ap_id" >>"$RESUME_FILE"
             printf '\n' >>"$RESUME_FILE"
             ((imported++))
         else
-            echo "✗ HTTP ${API_HTTP_CODE}: $(jq -r '.error // .message // "unknown error"' <<<"$API_RESPONSE" 2>/dev/null)"
+            echo "â HTTP ${API_HTTP_CODE}: $(jq -r '.error // .message // "unknown error"' <<<"$API_RESPONSE" 2>/dev/null)"
             ((failed++))
         fi
     done < <(jq -c '.communities[]' "$file")

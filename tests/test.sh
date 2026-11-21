@@ -83,6 +83,33 @@ test_repeated_v4_cursor_is_rejected() {
     [[ "$output" == *'repeated page cursor'* ]]
 }
 
+test_repeated_v3_page_is_rejected() {
+    local output counter_file="${TEST_TMP}/v3-page-count"
+    printf '0\n' >"$counter_file"
+    if output=$( (
+        EXPORT_DIR="${TEST_TMP}/v3-pages"
+        login() { API_VERSION=3; API_BASE='https://source.example/api/v3'; }
+        api_request() {
+            export API_HTTP_CODE API_RESPONSE
+            local count item
+            count=$(<"$counter_file")
+            printf '%s\n' "$((count + 1))" >"$counter_file"
+            if [[ "$2" == */user/export_settings ]]; then
+                API_HTTP_CODE=404
+                API_RESPONSE='{"error":"not found"}'
+                return
+            fi
+            item='{"community":{"name":"test","ap_id":"https://remote.example/c/test"}}'
+            API_HTTP_CODE=200
+            API_RESPONSE="{\"communities\":[$(for i in $(seq 1 49); do printf '%s,' "$item"; done)${item}]}"
+        }
+        do_export 'https://source.example' '' '' 'token'
+    ) 2>&1); then
+        return 1
+    fi
+    [[ -n "$output" && "$output" == *'repeated page'* ]]
+}
+
 test_status_is_retried() {
     local initial_status="$1" counter_file="${TEST_TMP}/retry-count-${1}"
     printf '0\n' >"$counter_file"
@@ -146,6 +173,7 @@ run_test 'legacy resume state is migrated to the current target' test_legacy_res
 run_test 'dry runs do not create resume state' test_dry_run_does_not_create_resume_state
 run_test 'incomplete API v4 pages are rejected' test_incomplete_v4_page_is_rejected
 run_test 'repeated API v4 cursors are rejected' test_repeated_v4_cursor_is_rejected
+run_test 'repeated API v3 pages are rejected' test_repeated_v3_page_is_rejected
 run_test 'HTTP 429 responses are retried' test_rate_limit_is_retried
 run_test 'HTTP 503 responses are retried' test_server_error_is_retried
 run_test 'missing option values are rejected' test_missing_option_value_is_rejected

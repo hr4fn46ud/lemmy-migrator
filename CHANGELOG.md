@@ -2,6 +2,13 @@
 
 All notable changes to Lemmy Migrator are documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- Detect repeated pages in the API v3 community-list fallback export and abort instead of looping forever when an instance keeps returning the same page.
+- Document the `full` subcommand credential options (`--source-user`, `--source-password`, `--source-token`, `--target-user`, `--target-password`, `--target-token`) in the usage help.
+
 ## [0.1] - 2026-08-19
 
 ### Added
