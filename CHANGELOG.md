@@ -2,7 +2,7 @@
 
 All notable changes to Lemmy Migrator are documented in this file.
 
-## [Unreleased]
+## [0.2] - 2026-11-21
 
 ### Fixed
 
@@ -27,3 +27,5 @@ All notable changes to Lemmy Migrator are documented in this file.
 - Reject missing, empty, and invalid CLI or retry-configuration values with actionable errors ([#4](https://github.com/netherwraith/lemmy-migrator/issues/4)).
 
 [0.1]: https://github.com/netherwraith/lemmy-migrator/releases/tag/v0.1
+
+[0.2]: https://github.com/hr4fn46ud/lemmy-migrator/releases/tag/v0.2
